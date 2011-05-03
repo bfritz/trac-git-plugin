@@ -632,18 +632,9 @@ class Storage(object):
 
         db = self.get_commits()
         if commit_id not in db:
-            if self.was_svn:
-                sha = self.svn_rev_to_sha(commit_id)
-                if sha:
-                    commit_id = sha
-                else:
-                    self.logger.info("read_commit failed for '%s' ('%s') (tried svn)" %
-                             (commit_id, commit_id_orig))
-                    raise GitErrorSha
-            else:
-                self.logger.info("read_commit failed for '%s' ('%s')" %
-                             (commit_id, commit_id_orig))
-                raise GitErrorSha
+            self.logger.info("read_commit failed for '%s' ('%s')" %
+                         (commit_id, commit_id_orig))
+            raise GitErrorSha
 
         with self.__commit_msg_lock:
             if self.__commit_msg_cache.has_key(commit_id):
