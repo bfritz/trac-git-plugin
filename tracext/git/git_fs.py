@@ -355,9 +355,13 @@ class GitRepository(Repository):
         self._use_committer_time = use_committer_time
         self._use_committer_id = use_committer_id
 
+        _use_svn_id = BoolOption('git', 'use_svn_id', 'false',
+                                 "try looking up revisions by git-svn-id if present")
+
         self.git = PyGIT.StorageFactory(path, log, not persistent_cache,
                                         git_bin=git_bin,
-                                        git_fs_encoding=git_fs_encoding).getInstance()
+                                        git_fs_encoding=git_fs_encoding,
+                                        was_svn=_use_svn_id).getInstance()
 
         Repository.__init__(self, "git:"+path, self.params, log)
 

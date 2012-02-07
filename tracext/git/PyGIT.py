@@ -129,14 +129,14 @@ class StorageFactory(object):
     __dict_nonweak = dict()
     __dict_lock = Lock()
 
-    def __init__(self, repo, log, weak=True, git_bin='git', git_fs_encoding=None):
+    def __init__(self, repo, log, weak=True, git_bin='git', git_fs_encoding=None, was_svn=False):
         self.logger = log
 
         with StorageFactory.__dict_lock:
             try:
                 i = StorageFactory.__dict[repo]
             except KeyError:
-                i = Storage(repo, log, git_bin, git_fs_encoding)
+                i = Storage(repo, log, git_bin, git_fs_encoding, was_svn)
                 StorageFactory.__dict[repo] = i
 
                 # create or remove additional reference depending on 'weak' argument
@@ -208,7 +208,8 @@ class Storage(object):
                            " (tried to execute/parse '%s --version' but got %s)"
                            % (git_bin, repr(e)))
 
-    def __init__(self, git_dir, log, git_bin='git', git_fs_encoding=None):
+    def __init__(self, git_dir, log, git_bin='git', git_fs_encoding=None,
+                 was_svn = False):
         """
         Initialize PyGit.Storage instance
 
@@ -225,6 +226,8 @@ class Storage(object):
                 unicode objects is performed, and bytestrings are
                 returned instead
 
+        `was_svn`: try looking up revisions from the git-svn-id lines added
+                on import from Subversion.
         """
 
         self.logger = log
@@ -256,6 +259,7 @@ class Storage(object):
         self.repo = GitCore(git_dir, git_bin=git_bin)
 
         self.commit_encoding = None
+        self.was_svn = was_svn
 
         # caches
         self.__rev_cache = None
@@ -574,6 +578,11 @@ class Storage(object):
         # short-cut
         if len(srev) == 40 and srev in _rev_cache.rev_dict:
             return srev
+        
+        if self.was_svn:
+            sha = self.svn_rev_to_sha(srev)
+            if sha:
+                return sha
 
         if not GitCore.is_sha(srev):
             return None
@@ -617,6 +626,28 @@ class Storage(object):
 
         return [ split_ls_tree_line(e) for e in tree if e ]
 
+    def svn_rev_to_sha(self, rev, cache = {}):
+        tc = ''
+        commitline = re.compile("commit ([0-9a-fA-F]{40})")
+        svnline = re.compile('git-svn-id:.*\D+(\d+)\s')
+        try:
+            rev = int(rev)
+            cached = cache.get(rev)
+            if cached:
+                return cached
+            for line in self.repo.log().splitlines():
+                m = commitline.match(line)
+                if m:
+                    tc = m.group(1) 
+                else:
+                    m = svnline.search(line)
+                    if m and int(m.group(1)) == rev:
+                        cache.update({rev:tc})
+                        return tc
+            return None
+        except ValueError:
+            return rev
+
     def read_commit(self, commit_id):
         if not commit_id:
             raise GitError("read_commit called with empty commit_id")
@@ -626,7 +657,7 @@ class Storage(object):
         db = self.get_commits()
         if commit_id not in db:
             self.logger.info("read_commit failed for '%s' ('%s')" %
-                             (commit_id, commit_id_orig))
+                         (commit_id, commit_id_orig))
             raise GitErrorSha
 
         with self.__commit_msg_lock:
